@@ -9,26 +9,32 @@ const MAP_MIN = Vector2i(0, 0)
 const MAP_MAX = Vector2i(10, 10)
 
 var selected_unit = null
-
-# 🔥 НОВЕ: зайняті клітини
 var occupied_cells = {}
 
+# ❗ нове
+var click_handled = false
 
-# 🔧 Ініціалізація
+
+# =========================================================
+# INIT
+# =========================================================
+
 func _ready():
 	occupied_cells.clear()
 
 	for unit in get_tree().get_nodes_in_group("unit"):
 		unit.unit_clicked.connect(select_unit)
 		unit.grid_position = world_to_cell(unit.position)
-
 		occupied_cells[unit.grid_position] = unit
 
-		print("INIT:", unit.grid_position)
 
+# =========================================================
+# SELECT
+# =========================================================
 
-# 🟡 Вибір юніта
 func select_unit(unit):
+	click_handled = true  # ❗ фікс подвійного кліку
+
 	if selected_unit == unit:
 		selected_unit.set_selected(false)
 		selected_unit = null
@@ -44,116 +50,225 @@ func select_unit(unit):
 	show_move_range(unit)
 
 
-# 🖱 Клік по мапі
+# =========================================================
+# INPUT
+# =========================================================
+
 func _input(event):
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			handle_map_click(get_global_mouse_position())
+
+			click_handled = false
+
+			# даємо шанс Area2D обробити клік
+			await get_tree().process_frame
+
+			if not click_handled:
+				handle_map_click(get_global_mouse_position())
 
 
-# 🚶 Обробка кліку
+# =========================================================
+# CLICK
+# =========================================================
+
 func handle_map_click(mouse_pos):
 	if not selected_unit:
 		return
 
-	var target_cell = get_clicked_cell(mouse_pos)
+	var target = get_clicked_cell(mouse_pos)
 
-	if not is_within_map(target_cell):
+	if not is_within_map(target):
 		return
 
-	# ❗ блокування
-	if is_cell_occupied(target_cell):
-		print("Клітинка зайнята")
+	if is_cell_occupied(target):
 		return
 
-	var distance = get_distance(selected_unit.grid_position, target_cell)
+	var path = find_path(selected_unit.grid_position, target)
 
-	print("FROM:", selected_unit.grid_position)
-	print("TO:", target_cell)
-	print("DIST:", distance)
+	if path.is_empty():
+		print("Шляху немає")
+		return
 
-	if distance > selected_unit.move_range:
+	if path.size() - 1 > selected_unit.move_range:
 		print("Занадто далеко")
 		return
 
-	move_unit(selected_unit, target_cell)
+	move_unit_along_path(selected_unit, path)
 
 
-# 📍 Переміщення
-func move_unit(unit, target_cell):
-	# ❗ звільняємо стару клітинку
+# =========================================================
+# MOVE
+# =========================================================
+
+func move_unit_along_path(unit, path):
 	occupied_cells.erase(unit.grid_position)
 
-	unit.grid_position = target_cell
-	unit.position = cell_to_world(target_cell)
+	for cell in path:
+		unit.grid_position = cell
+		unit.position = cell_to_world(cell)
 
-	# ❗ займаємо нову
-	occupied_cells[target_cell] = unit
+	occupied_cells[unit.grid_position] = unit
 
 	clear_highlight()
 
+	# ❗ перемалювати підсвітку для нового положення
+	if selected_unit == unit:
+		show_move_range(unit)
 
-# 🔄 Базові перетворення
-func world_to_cell(pos: Vector2) -> Vector2i:
-	return tilemap.local_to_map(tilemap.to_local(pos))
+# =========================================================
+# BFS (ПІДСВІТКА)
+# =========================================================
+
+func show_move_range(unit):
+	clear_highlight()
+
+	var origin = unit.grid_position
+	var range = unit.move_range
+
+	var visited = {}
+	var queue = []
+
+	queue.append(origin)
+	visited[origin] = 0
+
+	while queue.size() > 0:
+		var current = queue.pop_front()
+		var dist = visited[current]
+
+		for neighbor in get_neighbors(current):
+
+			if not is_within_map(neighbor):
+				continue
+
+			if is_cell_occupied(neighbor) and neighbor != origin:
+				continue
+
+			var new_dist = dist + 1
+
+			if new_dist > range:
+				continue
+
+			if neighbor not in visited:
+				visited[neighbor] = new_dist
+				queue.append(neighbor)
+
+				if new_dist > 0:
+					tilemap.set_cell(HIGHLIGHT_LAYER, neighbor, 0, HIGHLIGHT_TILE)
 
 
-func cell_to_world(cell: Vector2i) -> Vector2:
-	return tilemap.to_global(tilemap.map_to_local(cell))
-
-
-# 🔥 Визначення клітинки під мишею
-func get_clicked_cell(mouse_pos: Vector2) -> Vector2i:
-	var local_pos = tilemap.to_local(mouse_pos)
-	var cell = tilemap.local_to_map(local_pos)
-
-	var best_cell = cell
-	var best_dist = cell_to_world(cell).distance_to(mouse_pos)
-
-	for x in range(-1, 2):
-		for y in range(-1, 2):
-			var neighbor = cell + Vector2i(x, y)
-			var world_pos = cell_to_world(neighbor)
-			var dist = world_pos.distance_to(mouse_pos)
-
-			if dist < best_dist:
-				best_dist = dist
-				best_cell = neighbor
-
-	return best_cell
+func clear_highlight():
+	tilemap.clear_layer(HIGHLIGHT_LAYER)
 
 
 # =========================================================
-# 🧠 HEX ЛОГІКА
+# A*
 # =========================================================
 
-func offset_to_cube(cell: Vector2i) -> Vector3i:
-	var col: int = cell.x
-	var row: int = cell.y
+func find_path(start, goal):
+	var open = [start]
+	var came_from = {}
 
-	var x: int = col - ((row - (row & 1)) >> 1)
-	var z: int = row
-	var y: int = -x - z
+	var g_score = {}
+	g_score[start] = 0
 
+	var f_score = {}
+	f_score[start] = get_distance(start, goal)
+
+	while open.size() > 0:
+		var current = open[0]
+
+		for c in open:
+			if f_score.get(c, 99999) < f_score.get(current, 99999):
+				current = c
+
+		if current == goal:
+			return reconstruct_path(came_from, current)
+
+		open.erase(current)
+
+		for neighbor in get_neighbors(current):
+
+			if not is_within_map(neighbor):
+				continue
+
+			if is_cell_occupied(neighbor) and neighbor != goal:
+				continue
+
+			var tentative = g_score[current] + 1
+
+			if tentative < g_score.get(neighbor, 99999):
+				came_from[neighbor] = current
+				g_score[neighbor] = tentative
+				f_score[neighbor] = tentative + get_distance(neighbor, goal)
+
+				if neighbor not in open:
+					open.append(neighbor)
+
+	return []
+
+
+func reconstruct_path(came_from, current):
+	var path = [current]
+
+	while current in came_from:
+		current = came_from[current]
+		path.insert(0, current)
+
+	return path
+
+
+# =========================================================
+# HEX (cube-based)
+# =========================================================
+
+func get_neighbors(cell: Vector2i) -> Array:
+	var result = []
+
+	var cube = offset_to_cube(cell)
+
+	var directions = [
+		Vector3i(1, -1, 0), Vector3i(1, 0, -1),
+		Vector3i(0, 1, -1), Vector3i(-1, 1, 0),
+		Vector3i(-1, 0, 1), Vector3i(0, -1, 1)
+	]
+
+	for d in directions:
+		var neighbor_cube = cube + d
+		var neighbor_offset = cube_to_offset(neighbor_cube)
+		result.append(neighbor_offset)
+
+	return result
+
+
+func offset_to_cube(cell):
+	var x = cell.x - ((cell.y - (cell.y & 1)) >> 1)
+	var z = cell.y
+	var y = -x - z
 	return Vector3i(x, y, z)
 
 
-func get_distance(a: Vector2i, b: Vector2i) -> int:
-	var ac: Vector3i = offset_to_cube(a)
-	var bc: Vector3i = offset_to_cube(b)
+func cube_to_offset(cube: Vector3i) -> Vector2i:
+	var col = cube.x + ((cube.z - (cube.z & 1)) >> 1)
+	var row = cube.z
+	return Vector2i(col, row)
+
+
+func get_distance(a, b):
+	var ac = offset_to_cube(a)
+	var bc = offset_to_cube(b)
 
 	return (
-		abs(ac.x - bc.x)
-		+ abs(ac.y - bc.y)
-		+ abs(ac.z - bc.z)
+		abs(ac.x - bc.x) +
+		abs(ac.y - bc.y) +
+		abs(ac.z - bc.z)
 	) / 2
 
 
 # =========================================================
-# 🗺 МЕЖІ МАПИ
+# MAP
 # =========================================================
 
-func is_within_map(cell: Vector2i) -> bool:
+func is_within_map(cell):
 	if cell.y < MAP_MIN.y or cell.y > MAP_MAX.y:
 		return false
 
@@ -164,43 +279,39 @@ func is_within_map(cell: Vector2i) -> bool:
 
 
 # =========================================================
-# 🔒 ЗАЙНЯТІСТЬ КЛІТИН
+# OCCUPIED
 # =========================================================
 
-func is_cell_occupied(cell: Vector2i) -> bool:
+func is_cell_occupied(cell):
 	return occupied_cells.has(cell)
 
 
 # =========================================================
-# ✨ ПІДСВІТКА
+# COORDS
 # =========================================================
 
-func show_move_range(unit):
-	clear_highlight()
-
-	var range = unit.move_range
-	var origin = unit.grid_position
-
-	for x in range(origin.x - range, origin.x + range + 1):
-		for y in range(origin.y - range, origin.y + range + 1):
-			var cell = Vector2i(x, y)
-
-			if not is_within_map(cell):
-				continue
-
-			var dist = get_distance(origin, cell)
-
-			# ❗ не підсвічуємо стартову клітинку
-			if dist == 0:
-				continue
-
-			# ❗ не підсвічуємо зайняті
-			if is_cell_occupied(cell):
-				continue
-
-			if dist <= range:
-				tilemap.set_cell(HIGHLIGHT_LAYER, cell, 0, HIGHLIGHT_TILE)
+func world_to_cell(pos):
+	return tilemap.local_to_map(tilemap.to_local(pos))
 
 
-func clear_highlight():
-	tilemap.clear_layer(HIGHLIGHT_LAYER)
+func cell_to_world(cell):
+	return tilemap.to_global(tilemap.map_to_local(cell))
+
+
+func get_clicked_cell(mouse_pos):
+	var local_pos = tilemap.to_local(mouse_pos)
+	var cell = tilemap.local_to_map(local_pos)
+
+	var best_cell = cell
+	var best_dist = cell_to_world(cell).distance_to(mouse_pos)
+
+	for x in range(-1, 2):
+		for y in range(-1, 2):
+			var n = cell + Vector2i(x, y)
+			var d = cell_to_world(n).distance_to(mouse_pos)
+
+			if d < best_dist:
+				best_dist = d
+				best_cell = n
+
+	return best_cell

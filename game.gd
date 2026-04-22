@@ -10,8 +10,6 @@ const MAP_MAX = Vector2i(10, 10)
 
 var selected_unit = null
 var occupied_cells = {}
-
-# ❗ нове
 var click_handled = false
 
 
@@ -33,7 +31,7 @@ func _ready():
 # =========================================================
 
 func select_unit(unit):
-	click_handled = true  # ❗ фікс подвійного кліку
+	click_handled = true
 
 	if selected_unit == unit:
 		selected_unit.set_selected(false)
@@ -59,8 +57,6 @@ func _input(event):
 		if event.button_index == MOUSE_BUTTON_LEFT:
 
 			click_handled = false
-
-			# даємо шанс Area2D обробити клік
 			await get_tree().process_frame
 
 			if not click_handled:
@@ -93,7 +89,7 @@ func handle_map_click(mouse_pos):
 		print("Занадто далеко")
 		return
 
-	move_unit_along_path(selected_unit, path)
+	await move_unit_along_path(selected_unit, path)
 
 
 # =========================================================
@@ -103,17 +99,52 @@ func handle_map_click(mouse_pos):
 func move_unit_along_path(unit, path):
 	occupied_cells.erase(unit.grid_position)
 
-	for cell in path:
-		unit.grid_position = cell
-		unit.position = cell_to_world(cell)
+	await animate_path(unit, path)
 
 	occupied_cells[unit.grid_position] = unit
 
 	clear_highlight()
 
-	# ❗ перемалювати підсвітку для нового положення
 	if selected_unit == unit:
 		show_move_range(unit)
+
+
+func animate_path(unit, path):
+	var tween = create_tween()
+
+	var prev_dir = null
+
+	for i in range(1, path.size()):
+		var from = cell_to_world(path[i - 1])
+		var to = cell_to_world(path[i])
+
+		var dir = (to - from).normalized()
+
+		# 🔄 поворот тільки якщо треба
+		if prev_dir == null or dir.dot(prev_dir) < 0.999:
+			var target_angle = dir.angle()
+
+			var current = unit.rotation
+			var diff = wrapf(target_angle - current, -PI, PI)
+			var final_angle = current + diff
+
+			tween.tween_property(unit, "rotation", final_angle, 0.12)
+
+			# 💡 фіксуємо кут після tween (прибирає "недовороти")
+			tween.tween_callback(func():
+				unit.rotation = final_angle
+			)
+
+		# 🚶 рух
+		tween.tween_property(unit, "position", to, 0.25)\
+			.set_trans(Tween.TRANS_LINEAR)\
+			.set_ease(Tween.EASE_IN_OUT)
+
+		prev_dir = dir
+		unit.grid_position = path[i]
+
+	await tween.finished
+
 
 # =========================================================
 # BFS (ПІДСВІТКА)
@@ -218,10 +249,10 @@ func reconstruct_path(came_from, current):
 
 
 # =========================================================
-# HEX (cube-based)
+# HEX
 # =========================================================
 
-func get_neighbors(cell: Vector2i) -> Array:
+func get_neighbors(cell):
 	var result = []
 
 	var cube = offset_to_cube(cell)
@@ -233,9 +264,7 @@ func get_neighbors(cell: Vector2i) -> Array:
 	]
 
 	for d in directions:
-		var neighbor_cube = cube + d
-		var neighbor_offset = cube_to_offset(neighbor_cube)
-		result.append(neighbor_offset)
+		result.append(cube_to_offset(cube + d))
 
 	return result
 
@@ -247,7 +276,7 @@ func offset_to_cube(cell):
 	return Vector3i(x, y, z)
 
 
-func cube_to_offset(cube: Vector3i) -> Vector2i:
+func cube_to_offset(cube):
 	var col = cube.x + ((cube.z - (cube.z & 1)) >> 1)
 	var row = cube.z
 	return Vector2i(col, row)
@@ -265,7 +294,7 @@ func get_distance(a, b):
 
 
 # =========================================================
-# MAP
+# MAP / UTILS
 # =========================================================
 
 func is_within_map(cell):
@@ -278,17 +307,9 @@ func is_within_map(cell):
 		return cell.x >= MAP_MIN.x and cell.x <= MAP_MAX.x
 
 
-# =========================================================
-# OCCUPIED
-# =========================================================
-
 func is_cell_occupied(cell):
 	return occupied_cells.has(cell)
 
-
-# =========================================================
-# COORDS
-# =========================================================
 
 func world_to_cell(pos):
 	return tilemap.local_to_map(tilemap.to_local(pos))

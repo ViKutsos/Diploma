@@ -11,6 +11,7 @@ const MAP_MAX = Vector2i(10, 10)
 var selected_unit = null
 var occupied_cells = {}
 var click_handled = false
+var is_moving = false
 
 
 # =========================================================
@@ -31,6 +32,13 @@ func _ready():
 # =========================================================
 
 func select_unit(unit):
+	if is_moving:
+		return
+
+	if not unit.can_act():
+		print("Немає очок дії")
+		return
+
 	click_handled = true
 
 	if selected_unit == unit:
@@ -53,6 +61,9 @@ func select_unit(unit):
 # =========================================================
 
 func _input(event):
+	if is_moving:
+		return
+
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 
@@ -71,6 +82,13 @@ func handle_map_click(mouse_pos):
 	if not selected_unit:
 		return
 
+	# 🔥 ЯКЩО AP ЗАКІНЧИЛИСЯ — ПРОСТО ЗНЯТИ ВИДІЛЕННЯ
+	if not selected_unit.can_act():
+		selected_unit.set_selected(false)
+		selected_unit = null
+		clear_highlight()
+		return
+
 	var target = get_clicked_cell(mouse_pos)
 
 	if not is_within_map(target):
@@ -82,11 +100,9 @@ func handle_map_click(mouse_pos):
 	var path = find_path(selected_unit.grid_position, target)
 
 	if path.is_empty():
-		print("Шляху немає")
 		return
 
 	if path.size() - 1 > selected_unit.move_range:
-		print("Занадто далеко")
 		return
 
 	await move_unit_along_path(selected_unit, path)
@@ -97,16 +113,26 @@ func handle_map_click(mouse_pos):
 # =========================================================
 
 func move_unit_along_path(unit, path):
+	is_moving = true
+
 	occupied_cells.erase(unit.grid_position)
 
 	await animate_path(unit, path)
+
+	unit.spend_ap(1)  # 🔥 списуємо AP
 
 	occupied_cells[unit.grid_position] = unit
 
 	clear_highlight()
 
 	if selected_unit == unit:
-		show_move_range(unit)
+		if unit.can_act():
+			show_move_range(unit)
+		else:
+			print("Очки дії вичерпано")
+			clear_highlight()
+
+	is_moving = false
 
 
 func animate_path(unit, path):
@@ -120,7 +146,6 @@ func animate_path(unit, path):
 
 		var dir = (to - from).normalized()
 
-		# 🔄 поворот тільки якщо треба
 		if prev_dir == null or dir.dot(prev_dir) < 0.999:
 			var target_angle = dir.angle()
 
@@ -130,12 +155,10 @@ func animate_path(unit, path):
 
 			tween.tween_property(unit, "rotation", final_angle, 0.12)
 
-			# 💡 фіксуємо кут після tween (прибирає "недовороти")
 			tween.tween_callback(func():
 				unit.rotation = final_angle
 			)
 
-		# 🚶 рух
 		tween.tween_property(unit, "position", to, 0.25)\
 			.set_trans(Tween.TRANS_LINEAR)\
 			.set_ease(Tween.EASE_IN_OUT)
@@ -152,6 +175,9 @@ func animate_path(unit, path):
 
 func show_move_range(unit):
 	clear_highlight()
+
+	if not unit.can_act():
+		return
 
 	var origin = unit.grid_position
 	var range = unit.move_range

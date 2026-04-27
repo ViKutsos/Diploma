@@ -5,15 +5,31 @@ signal unit_clicked(unit)
 @export var move_range := 2
 @export var max_action_points := 2
 
+# 🆕 команда
+@export var team := 0
+
+# 🆕 текстури
+@export var texture_team_0: Texture2D
+@export var texture_team_1: Texture2D
+
 var action_points := 2
 var grid_position: Vector2i
 
 @onready var selection = $Selection
+@onready var sprite = $Sprite2D
 
 
 func _ready():
 	action_points = max_action_points
 	selection.visible = false
+	update_visual()
+
+
+func update_visual():
+	if team == 0 and texture_team_0:
+		sprite.texture = texture_team_0
+	elif team == 1 and texture_team_1:
+		sprite.texture = texture_team_1
 
 
 func set_selected(value: bool):

@@ -13,6 +13,9 @@ var occupied_cells = {}
 var click_handled = false
 var is_moving = false
 
+# 🆕 чий зараз хід
+var current_team = 0
+
 
 # =========================================================
 # INIT
@@ -33,6 +36,10 @@ func _ready():
 
 func select_unit(unit):
 	if is_moving:
+		return
+
+	# 🆕 тільки своя команда
+	if unit.team != current_team:
 		return
 
 	if not unit.can_act():
@@ -82,7 +89,7 @@ func handle_map_click(mouse_pos):
 	if not selected_unit:
 		return
 
-	# 🔥 ЯКЩО AP ЗАКІНЧИЛИСЯ — ПРОСТО ЗНЯТИ ВИДІЛЕННЯ
+	# 🔥 якщо AP = 0 → зняти виділення
 	if not selected_unit.can_act():
 		selected_unit.set_selected(false)
 		selected_unit = null
@@ -119,7 +126,7 @@ func move_unit_along_path(unit, path):
 
 	await animate_path(unit, path)
 
-	unit.spend_ap(1)  # 🔥 списуємо AP
+	unit.spend_ap(1)
 
 	occupied_cells[unit.grid_position] = unit
 
@@ -130,6 +137,9 @@ func move_unit_along_path(unit, path):
 			show_move_range(unit)
 		else:
 			print("Очки дії вичерпано")
+
+			unit.set_selected(false)
+			selected_unit = null
 			clear_highlight()
 
 	is_moving = false
@@ -137,7 +147,6 @@ func move_unit_along_path(unit, path):
 
 func animate_path(unit, path):
 	var tween = create_tween()
-
 	var prev_dir = null
 
 	for i in range(1, path.size()):
@@ -148,16 +157,11 @@ func animate_path(unit, path):
 
 		if prev_dir == null or dir.dot(prev_dir) < 0.999:
 			var target_angle = dir.angle()
-
 			var current = unit.rotation
 			var diff = wrapf(target_angle - current, -PI, PI)
 			var final_angle = current + diff
 
 			tween.tween_property(unit, "rotation", final_angle, 0.12)
-
-			tween.tween_callback(func():
-				unit.rotation = final_angle
-			)
 
 		tween.tween_property(unit, "position", to, 0.25)\
 			.set_trans(Tween.TRANS_LINEAR)\
@@ -167,6 +171,24 @@ func animate_path(unit, path):
 		unit.grid_position = path[i]
 
 	await tween.finished
+
+
+# =========================================================
+# TURN SYSTEM (поки не використовується, але готово)
+# =========================================================
+
+func end_turn():
+	current_team = 1 - current_team
+
+	for unit in get_tree().get_nodes_in_group("unit"):
+		if unit.team == current_team:
+			unit.action_points = unit.max_action_points
+
+	clear_highlight()
+
+	if selected_unit:
+		selected_unit.set_selected(false)
+		selected_unit = null
 
 
 # =========================================================
@@ -218,7 +240,7 @@ func clear_highlight():
 
 
 # =========================================================
-# A*
+# PATHFINDING
 # =========================================================
 
 func find_path(start, goal):
@@ -280,13 +302,12 @@ func reconstruct_path(came_from, current):
 
 func get_neighbors(cell):
 	var result = []
-
 	var cube = offset_to_cube(cell)
 
 	var directions = [
-		Vector3i(1, -1, 0), Vector3i(1, 0, -1),
-		Vector3i(0, 1, -1), Vector3i(-1, 1, 0),
-		Vector3i(-1, 0, 1), Vector3i(0, -1, 1)
+		Vector3i(1,-1,0), Vector3i(1,0,-1),
+		Vector3i(0,1,-1), Vector3i(-1,1,0),
+		Vector3i(-1,0,1), Vector3i(0,-1,1)
 	]
 
 	for d in directions:
@@ -304,8 +325,7 @@ func offset_to_cube(cell):
 
 func cube_to_offset(cube):
 	var col = cube.x + ((cube.z - (cube.z & 1)) >> 1)
-	var row = cube.z
-	return Vector2i(col, row)
+	return Vector2i(col, cube.z)
 
 
 func get_distance(a, b):
@@ -328,9 +348,9 @@ func is_within_map(cell):
 		return false
 
 	if cell.y % 2 == 1:
-		return cell.x >= MAP_MIN.x and cell.x <= MAP_MAX.x - 1
+		return cell.x >= 0 and cell.x <= MAP_MAX.x - 1
 	else:
-		return cell.x >= MAP_MIN.x and cell.x <= MAP_MAX.x
+		return cell.x >= 0 and cell.x <= MAP_MAX.x
 
 
 func is_cell_occupied(cell):
@@ -349,16 +369,23 @@ func get_clicked_cell(mouse_pos):
 	var local_pos = tilemap.to_local(mouse_pos)
 	var cell = tilemap.local_to_map(local_pos)
 
-	var best_cell = cell
+	var best = cell
 	var best_dist = cell_to_world(cell).distance_to(mouse_pos)
 
-	for x in range(-1, 2):
-		for y in range(-1, 2):
-			var n = cell + Vector2i(x, y)
+	for x in range(-1,2):
+		for y in range(-1,2):
+			var n = cell + Vector2i(x,y)
 			var d = cell_to_world(n).distance_to(mouse_pos)
 
 			if d < best_dist:
 				best_dist = d
-				best_cell = n
+				best = n
 
-	return best_cell
+	return best
+
+
+func _on_end_turn_button_pressed():
+	if is_moving:
+		return
+
+	end_turn()

@@ -1,6 +1,7 @@
 extends Node2D
 
 @onready var tilemap = $TileMap
+@onready var camera = $Camera2D
 
 const HIGHLIGHT_LAYER = 1
 const HIGHLIGHT_TILE = Vector2i(3, 3)
@@ -8,12 +9,15 @@ const HIGHLIGHT_TILE = Vector2i(3, 3)
 const MAP_MIN = Vector2i(0, 0)
 const MAP_MAX = Vector2i(10, 10)
 
+const ZOOM_MIN = 3.0
+const ZOOM_MAX = 6.0
+const CAMERA_SPEED = 200.0
+
 var selected_unit = null
 var occupied_cells = {}
 var click_handled = false
 var is_moving = false
 
-# 🆕 чий зараз хід
 var current_team = 0
 
 
@@ -29,6 +33,45 @@ func _ready():
 		unit.grid_position = world_to_cell(unit.position)
 		occupied_cells[unit.grid_position] = unit
 
+func _process(delta):
+	move_camera(delta)
+
+func move_camera(delta):
+	var direction = Vector2.ZERO
+
+	# ⌨ WASD
+	if Input.is_key_pressed(KEY_W):
+		direction.y -= 1
+
+	if Input.is_key_pressed(KEY_S):
+		direction.y += 1
+
+	if Input.is_key_pressed(KEY_A):
+		direction.x -= 1
+
+	if Input.is_key_pressed(KEY_D):
+		direction.x += 1
+
+
+	# ⌨ СТРІЛКИ
+	if Input.is_action_pressed("ui_up"):
+		direction.y -= 1
+
+	if Input.is_action_pressed("ui_down"):
+		direction.y += 1
+
+	if Input.is_action_pressed("ui_left"):
+		direction.x -= 1
+
+	if Input.is_action_pressed("ui_right"):
+		direction.x += 1
+
+
+	# 🔥 нормалізація
+	if direction != Vector2.ZERO:
+		direction = direction.normalized()
+
+		camera.position += direction * CAMERA_SPEED * delta
 
 # =========================================================
 # SELECT
@@ -73,13 +116,45 @@ func _input(event):
 
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-
 			click_handled = false
 			await get_tree().process_frame
-
 			if not click_handled:
 				handle_map_click(get_global_mouse_position())
 
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			var new_zoom = camera.zoom * 1.1
+			new_zoom.x = min(new_zoom.x, ZOOM_MAX)
+			new_zoom.y = min(new_zoom.y, ZOOM_MAX)
+			camera.zoom = new_zoom
+
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			var new_zoom = camera.zoom * 0.9
+			new_zoom.x = max(new_zoom.x, ZOOM_MIN)
+			new_zoom.y = max(new_zoom.y, ZOOM_MIN)
+			camera.zoom = new_zoom
+
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_EQUAL \
+		or event.keycode == KEY_KP_ADD:
+			var new_zoom = camera.zoom * 1.1
+			new_zoom.x = min(new_zoom.x, ZOOM_MAX)
+			new_zoom.y = min(new_zoom.y, ZOOM_MAX)
+			camera.zoom = new_zoom
+
+		elif event.keycode == KEY_MINUS \
+		or event.keycode == KEY_KP_SUBTRACT:
+			var new_zoom = camera.zoom * 0.9
+			new_zoom.x = max(new_zoom.x, ZOOM_MIN)
+			new_zoom.y = max(new_zoom.y, ZOOM_MIN)
+			camera.zoom = new_zoom
+
+func apply_zoom(factor):
+	var cam = get_node("UnitsContainer/Camera2D")
+
+	cam.zoom *= factor
+
+	cam.zoom.x = clamp(cam.zoom.x, ZOOM_MIN, ZOOM_MAX)
+	cam.zoom.y = clamp(cam.zoom.y, ZOOM_MIN, ZOOM_MAX)
 
 # =========================================================
 # CLICK

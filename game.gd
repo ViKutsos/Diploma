@@ -12,6 +12,10 @@ const MAP_MAX = Vector2i(10, 10)
 const ZOOM_MIN = 3.0
 const ZOOM_MAX = 6.0
 const CAMERA_SPEED = 200.0
+const CAMERA_MIN = Vector2(90, 50)
+const CAMERA_MAX = Vector2(180, 180)
+const EDGE_SCROLL_MARGIN = 10
+const EDGE_SCROLL_SPEED = 1.0
 
 var selected_unit = null
 var occupied_cells = {}
@@ -39,7 +43,7 @@ func _process(delta):
 func move_camera(delta):
 	var direction = Vector2.ZERO
 
-	# ⌨ WASD
+	# WASD
 	if Input.is_key_pressed(KEY_W):
 		direction.y -= 1
 
@@ -52,8 +56,7 @@ func move_camera(delta):
 	if Input.is_key_pressed(KEY_D):
 		direction.x += 1
 
-
-	# ⌨ СТРІЛКИ
+	# Стрілки
 	if Input.is_action_pressed("ui_up"):
 		direction.y -= 1
 
@@ -66,12 +69,44 @@ func move_camera(delta):
 	if Input.is_action_pressed("ui_right"):
 		direction.x += 1
 
+	# 🖱 РУХ КАМЕРИ КРАЯМИ ЕКРАНУ
+	var mouse_pos = get_viewport().get_mouse_position()
+	var screen_size = get_viewport().get_visible_rect().size
 
-	# 🔥 нормалізація
+	# ЛІВО
+	if mouse_pos.x <= EDGE_SCROLL_MARGIN:
+		direction.x -= EDGE_SCROLL_SPEED
+
+	# ПРАВО
+	elif mouse_pos.x >= screen_size.x - EDGE_SCROLL_MARGIN:
+		direction.x += EDGE_SCROLL_SPEED
+
+	# ВГОРУ
+	if mouse_pos.y <= EDGE_SCROLL_MARGIN:
+		direction.y -= EDGE_SCROLL_SPEED
+
+	# ВНИЗ
+	elif mouse_pos.y >= screen_size.y - EDGE_SCROLL_MARGIN:
+		direction.y += EDGE_SCROLL_SPEED
+
 	if direction != Vector2.ZERO:
 		direction = direction.normalized()
 
 		camera.position += direction * CAMERA_SPEED * delta
+
+
+	# 🔒 ОБМЕЖЕННЯ КАМЕРИ
+	camera.position.x = clamp(
+		camera.position.x,
+		CAMERA_MIN.x,
+		CAMERA_MAX.x
+	)
+
+	camera.position.y = clamp(
+		camera.position.y,
+		CAMERA_MIN.y,
+		CAMERA_MAX.y
+	)
 
 # =========================================================
 # SELECT

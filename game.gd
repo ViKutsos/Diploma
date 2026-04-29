@@ -156,17 +156,11 @@ func _input(event):
 			if not click_handled:
 				handle_map_click(get_global_mouse_position())
 
-		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			var new_zoom = camera.zoom * 1.1
-			new_zoom.x = min(new_zoom.x, ZOOM_MAX)
-			new_zoom.y = min(new_zoom.y, ZOOM_MAX)
-			camera.zoom = new_zoom
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			zoom_at_cursor(1.1)
 
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			var new_zoom = camera.zoom * 0.9
-			new_zoom.x = max(new_zoom.x, ZOOM_MIN)
-			new_zoom.y = max(new_zoom.y, ZOOM_MIN)
-			camera.zoom = new_zoom
+			zoom_at_cursor(1.0/1.1)
 
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_EQUAL \
@@ -190,6 +184,26 @@ func apply_zoom(factor):
 
 	cam.zoom.x = clamp(cam.zoom.x, ZOOM_MIN, ZOOM_MAX)
 	cam.zoom.y = clamp(cam.zoom.y, ZOOM_MIN, ZOOM_MAX)
+
+func zoom_at_cursor(factor):
+	var mouse_screen_pos = get_viewport().get_mouse_position()
+
+	# 🌍 позиція у світі ДО zoom
+	var world_before = camera.get_global_mouse_position()
+
+	# 🔍 новий zoom
+	var new_zoom = camera.zoom * factor
+
+	new_zoom.x = clamp(new_zoom.x, ZOOM_MIN, ZOOM_MAX)
+	new_zoom.y = clamp(new_zoom.y, ZOOM_MIN, ZOOM_MAX)
+
+	camera.zoom = new_zoom
+
+	# 🌍 позиція у світі ПІСЛЯ zoom
+	var world_after = camera.get_global_mouse_position()
+
+	# 🧠 компенсуємо зміщення
+	camera.position += world_before - world_after
 
 # =========================================================
 # CLICK

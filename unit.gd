@@ -1,9 +1,13 @@
 extends Node2D
 
 signal unit_clicked(unit)
+signal unit_died(unit)
 
 @export var move_range := 2
 @export var max_action_points := 2
+@export var max_hp := 100
+@export var damage := 25
+@export var attack_range := 1
 
 # 🆕 команда
 @export var team := 0
@@ -13,6 +17,7 @@ signal unit_clicked(unit)
 @export var texture_team_1: Texture2D
 
 var action_points := 2
+var hp := 100
 var grid_position: Vector2i
 
 @onready var selection = $Selection
@@ -21,6 +26,7 @@ var grid_position: Vector2i
 
 func _ready():
 	action_points = max_action_points
+	hp = max_hp
 	selection.visible = false
 	update_visual()
 
@@ -47,5 +53,28 @@ func can_act() -> bool:
 
 
 func spend_ap(amount := 1):
-	action_points -= amount
-	action_points = max(action_points, 0)
+	action_points = clamp(
+		action_points - amount,
+		0,
+		max_action_points
+	)
+
+func take_damage(amount):
+	hp -= amount
+
+	print(name, " отримав ", amount, " шкоди. HP: ", hp)
+
+	if hp <= 0:
+		die()
+
+func die():
+	emit_signal("unit_died", self)
+	queue_free()
+
+func attack(target):
+	if not can_act():
+		return
+
+	target.take_damage(damage)
+
+	spend_ap(1)

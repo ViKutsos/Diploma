@@ -5,6 +5,7 @@ extends Node2D
 
 const HIGHLIGHT_LAYER = 1
 const HIGHLIGHT_TILE = Vector2i(3, 3)
+const ATTACK_HIGHLIGHT_TILE = Vector2i(2, 3)
 
 const MAP_MIN = Vector2i(0, 0)
 const MAP_MAX = Vector2i(10, 10)
@@ -34,6 +35,7 @@ func _ready():
 
 	for unit in get_tree().get_nodes_in_group("unit"):
 		unit.unit_clicked.connect(select_unit)
+		unit.unit_died.connect(on_unit_died)
 		unit.grid_position = world_to_cell(unit.position)
 		occupied_cells[unit.grid_position] = unit
 
@@ -139,6 +141,7 @@ func select_unit(unit):
 	selected_unit.set_selected(true)
 
 	show_move_range(unit)
+	show_attack_range(unit)
 
 
 # =========================================================
@@ -177,13 +180,6 @@ func _input(event):
 			new_zoom.y = max(new_zoom.y, ZOOM_MIN)
 			camera.zoom = new_zoom
 
-func apply_zoom(factor):
-	var cam = get_node("UnitsContainer/Camera2D")
-
-	cam.zoom *= factor
-
-	cam.zoom.x = clamp(cam.zoom.x, ZOOM_MIN, ZOOM_MAX)
-	cam.zoom.y = clamp(cam.zoom.y, ZOOM_MIN, ZOOM_MAX)
 
 func zoom_at_cursor(factor):
 	var mouse_screen_pos = get_viewport().get_mouse_position()
@@ -226,6 +222,31 @@ func handle_map_click(mouse_pos):
 		return
 
 	if is_cell_occupied(target):
+
+		var target_unit = occupied_cells[target]
+
+		# не можна бити своїх
+		if target_unit.team == selected_unit.team:
+			return
+
+		# перевірка дальності
+		var dist = get_distance(
+			selected_unit.grid_position,
+			target
+		)
+
+		if dist <= selected_unit.attack_range:
+			selected_unit.attack(target_unit)
+
+			# якщо AP закінчилися
+			if not selected_unit.can_act():
+				selected_unit.set_selected(false)
+				selected_unit = null
+				clear_highlight()
+			else:
+				show_move_range(selected_unit)
+				show_attack_range(selected_unit)
+
 		return
 
 	var path = find_path(selected_unit.grid_position, target)
@@ -259,6 +280,7 @@ func move_unit_along_path(unit, path):
 	if selected_unit == unit:
 		if unit.can_act():
 			show_move_range(unit)
+			show_attack_range(unit)
 		else:
 			print("Очки дії вичерпано")
 
@@ -292,9 +314,11 @@ func animate_path(unit, path):
 			.set_ease(Tween.EASE_IN_OUT)
 
 		prev_dir = dir
-		unit.grid_position = path[i]
 
 	await tween.finished
+
+# ✅ ОНОВЛЮЄМО ПІСЛЯ ЗАВЕРШЕННЯ АНІМАЦІЇ
+	unit.grid_position = path.back()
 
 
 # =========================================================
@@ -357,6 +381,34 @@ func show_move_range(unit):
 
 				if new_dist > 0:
 					tilemap.set_cell(HIGHLIGHT_LAYER, neighbor, 0, HIGHLIGHT_TILE)
+
+
+func show_attack_range(unit):
+
+	var origin = unit.grid_position
+
+	for other in get_tree().get_nodes_in_group("unit"):
+
+		# не підсвічуємо себе
+		if other == unit:
+			continue
+
+		# лише вороги
+		if other.team == unit.team:
+			continue
+
+		var dist = get_distance(
+			origin,
+			other.grid_position
+		)
+
+		if dist <= unit.attack_range:
+			tilemap.set_cell(
+				HIGHLIGHT_LAYER,
+				other.grid_position,
+				0,
+				ATTACK_HIGHLIGHT_TILE
+			)
 
 
 func clear_highlight():
@@ -513,3 +565,11 @@ func _on_end_turn_button_pressed():
 		return
 
 	end_turn()
+
+func on_unit_died(unit):
+	occupied_cells.erase(unit.grid_position)
+
+	if selected_unit == unit:
+		selected_unit = null
+
+	clear_highlight()

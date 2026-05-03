@@ -15,13 +15,16 @@ signal unit_died(unit)
 # 🆕 текстури
 @export var texture_team_0: Texture2D
 @export var texture_team_1: Texture2D
+@export var selection_ap_2: Texture2D
+@export var selection_ap_1: Texture2D
+@export var selection_ap_0: Texture2D
 
 var action_points := 2
 var hp := 100
 var grid_position: Vector2i
 
 @onready var selection = $Selection
-@onready var sprite = $Sprite2D
+@onready var sprite = $Visuals/Sprite2D
 
 
 func _ready():
@@ -29,6 +32,7 @@ func _ready():
 	hp = max_hp
 	selection.visible = false
 	update_visual()
+	update_selection_visual()
 
 
 func update_visual():
@@ -40,6 +44,9 @@ func update_visual():
 
 func set_selected(value: bool):
 	selection.visible = value
+
+	if value:
+		update_selection_visual()
 
 
 func _on_area_2d_input_event(viewport, event, shape_idx):
@@ -59,6 +66,8 @@ func spend_ap(amount := 1):
 		max_action_points
 	)
 
+	update_selection_visual()
+
 func take_damage(amount):
 	hp -= amount
 
@@ -72,9 +81,22 @@ func die():
 	queue_free()
 
 func attack(target):
+
 	if not can_act():
 		return
 
 	target.take_damage(damage)
 
 	spend_ap(1)
+
+
+func update_selection_visual():
+
+	if action_points >= 2:
+		selection.texture = selection_ap_2
+
+	elif action_points == 1:
+		selection.texture = selection_ap_1
+
+	else:
+		selection.texture = selection_ap_0

@@ -292,37 +292,55 @@ func move_unit_along_path(unit, path):
 
 
 func animate_path(unit, path):
+
 	var tween = create_tween()
 	var prev_dir = null
 
+	var visuals = unit.get_node("Visuals")
+
 	for i in range(1, path.size()):
+
 		var from = cell_to_world(path[i - 1])
 		var to = cell_to_world(path[i])
 
 		var dir = (to - from).normalized()
 
 		if prev_dir == null or dir.dot(prev_dir) < 0.999:
+
 			var target_angle = dir.angle()
-			var current = unit.rotation
-			var diff = wrapf(target_angle - current, -PI, PI)
+
+			var current = visuals.rotation
+			var diff = wrapf(
+				target_angle - current,
+				-PI,
+				PI
+			)
+
 			var final_angle = current + diff
 
-			tween.tween_property(unit, "rotation", final_angle, 0.12)
+			tween.tween_property(
+				visuals,
+				"rotation",
+				final_angle,
+				0.12
+			)
 
-		tween.tween_property(unit, "position", to, 0.25)\
-			.set_trans(Tween.TRANS_LINEAR)\
-			.set_ease(Tween.EASE_IN_OUT)
+		tween.tween_property(
+			unit,
+			"position",
+			to,
+			0.25
+		).set_trans(Tween.TRANS_LINEAR)\
+		 .set_ease(Tween.EASE_IN_OUT)
 
 		prev_dir = dir
+		unit.grid_position = path[i]
 
 	await tween.finished
 
-# ✅ ОНОВЛЮЄМО ПІСЛЯ ЗАВЕРШЕННЯ АНІМАЦІЇ
-	unit.grid_position = path.back()
-
 
 # =========================================================
-# TURN SYSTEM (поки не використовується, але готово)
+# TURN SYSTEM
 # =========================================================
 
 func end_turn():
@@ -331,6 +349,7 @@ func end_turn():
 	for unit in get_tree().get_nodes_in_group("unit"):
 		if unit.team == current_team:
 			unit.action_points = unit.max_action_points
+			unit.update_selection_visual()
 
 	clear_highlight()
 

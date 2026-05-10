@@ -25,6 +25,8 @@ var grid_position: Vector2i
 
 @onready var selection = $Selection
 @onready var sprite = $Visuals/Sprite2D
+@onready var hp_bar_bg = $HPBarBG
+@onready var hp_bar = $HPBarBG/HPBar
 
 
 func _ready():
@@ -33,6 +35,7 @@ func _ready():
 	selection.visible = false
 	update_visual()
 	update_selection_visual()
+	update_hp_ui()
 
 
 func update_visual():
@@ -44,6 +47,7 @@ func update_visual():
 
 func set_selected(value: bool):
 	selection.visible = value
+	hp_bar_bg.visible = value
 
 	if value:
 		update_selection_visual()
@@ -70,8 +74,7 @@ func spend_ap(amount := 1):
 
 func take_damage(amount):
 	hp -= amount
-
-	print(name, " отримав ", amount, " шкоди. HP: ", hp)
+	update_hp_ui()
 
 	if hp <= 0:
 		die()
@@ -92,7 +95,10 @@ func attack(target):
 
 func update_selection_visual():
 
-	if action_points >= 2:
+	if not selection.visible:
+		return
+
+	if action_points == 2:
 		selection.texture = selection_ap_2
 
 	elif action_points == 1:
@@ -100,3 +106,30 @@ func update_selection_visual():
 
 	else:
 		selection.texture = selection_ap_0
+
+func update_hp_ui():
+
+	var percent = float(hp) / float(max_hp)
+
+	# довжина смуги
+	hp_bar.size.x = 20 * percent
+
+	# колір
+	if percent > 0.75:
+		hp_bar.color = Color.GREEN
+
+	elif percent > 0.50:
+		hp_bar.color = Color.YELLOW
+
+	elif percent > 0.25:
+		hp_bar.color = Color.ORANGE
+
+	else:
+		hp_bar.color = Color.RED
+
+func show_status_ui(show_hp: bool, show_selection := false):
+
+	hp_bar_bg.visible = show_hp
+	selection.visible = show_selection
+
+	update_selection_visual()

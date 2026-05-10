@@ -25,6 +25,7 @@ var is_moving = false
 
 var current_team = 0
 
+var alt_held = false
 
 # =========================================================
 # INIT
@@ -122,10 +123,6 @@ func select_unit(unit):
 	if unit.team != current_team:
 		return
 
-	if not unit.can_act():
-		print("Немає очок дії")
-		return
-
 	click_handled = true
 
 	if selected_unit == unit:
@@ -179,6 +176,18 @@ func _input(event):
 			new_zoom.x = max(new_zoom.x, ZOOM_MIN)
 			new_zoom.y = max(new_zoom.y, ZOOM_MIN)
 			camera.zoom = new_zoom
+	
+	if event is InputEventKey:
+
+		if event.keycode == KEY_ALT:
+
+			if event.pressed and not alt_held:
+				alt_held = true
+				show_all_unit_status()
+
+			elif not event.pressed:
+				alt_held = false
+				hide_all_unit_status()
 
 
 func zoom_at_cursor(factor):
@@ -403,7 +412,10 @@ func show_move_range(unit):
 
 
 func show_attack_range(unit):
-
+	
+	if not unit.can_act():
+		return
+	
 	var origin = unit.grid_position
 
 	for other in get_tree().get_nodes_in_group("unit"):
@@ -592,3 +604,24 @@ func on_unit_died(unit):
 		selected_unit = null
 
 	clear_highlight()
+
+func show_all_unit_status():
+
+	for unit in get_tree().get_nodes_in_group("unit"):
+
+		if unit.team == current_team:
+			unit.show_status_ui(true, true)
+
+		else:
+			unit.show_status_ui(true, false)
+
+func hide_all_unit_status():
+
+	for unit in get_tree().get_nodes_in_group("unit"):
+
+		# selected unit лишається виділеним
+		if unit == selected_unit:
+			unit.show_status_ui(true, true)
+
+		else:
+			unit.show_status_ui(false, false)
